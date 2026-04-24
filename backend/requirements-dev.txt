@@ -1,0 +1,40 @@
+# Lekki zestaw do lokalnego developmentu (bez asyncpg/greenlet kompilacji)
+# Używa SQLite + synchronicznego SQLAlchemy (bez asyncpg)
+# Uruchom: pip install -r requirements-dev.txt
+
+# ── Web Framework ──────────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+
+# ── Database (SYNC - SQLite dla local dev) ────────────────────────────────────
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+
+# ── Validation & Settings ─────────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+
+# ── Auth / Security ───────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# ── Utils ─────────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+structlog==24.2.0
+
+# ── AI (opcjonalne - zakomentuj jeśli nie masz klucza) ───────────────────────
+openai==1.51.2
+httpx==0.27.2
+tenacity==9.0.0
+pillow==11.0.0
+
+# ── Do instalacji w produkcji (wymaga kompilacji): ────────────────────────────
+# asyncpg==0.29.0
+# greenlet==3.0.3
+# psycopg2-binary
+# celery[redis]==5.4.0
+# redis==5.0.8
+# stripe==10.12.0

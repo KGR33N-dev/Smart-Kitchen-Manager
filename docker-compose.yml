@@ -1,0 +1,147 @@
+version: "3.9"
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  kitchen_net:
+    driver: bridge
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: smart_kitchen_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kitchen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kitchen_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_kitchen}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks: [kitchen_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kitchen} -d ${POSTGRES_DB:-smart_kitchen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: smart_kitchen_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks: [kitchen_net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI App ───────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_kitchen_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    volumes:
+      - uploads_data:/app/uploads
+      - ./backend:/app    # Hot-reload in dev mode
+    ports:
+      - "8000:8000"
+    networks: [kitchen_net]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  # ── Celery Worker ────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_kitchen_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - uploads_data:/app/uploads
+      - ./backend:/app
+    networks: [kitchen_net]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      celery -A app.tasks.celery_app.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --queues=celery
+
+  # ── Celery Beat (Scheduler) ───────────────────────────────────────────────────
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_kitchen_beat
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    networks: [kitchen_net]
+    depends_on:
+      - worker
+    command: >
+      celery -A app.tasks.celery_app.celery_app beat
+      --loglevel=info
+      --scheduler celery.schedulers.DatabaseScheduler
+
+  # ── Flower (Celery Dashboard) ─────────────────────────────────────────────────
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smart_kitchen_flower
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    networks: [kitchen_net]
+    depends_on:
+      - redis
+    command: >
+      celery -A app.tasks.celery_app.celery_app flower
+      --port=5555
+      --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}

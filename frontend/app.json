@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Smart Fridge Assistant",
+    "slug": "smart-fridge-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "smartfridge",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E8F5E9"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.smartkitchen.fridge",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan receipts and capture food items",
+        "NSPhotoLibraryUsageDescription": "Used to select receipt photos"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E8F5E9"
+      },
+      "package": "com.smartkitchen.fridge",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
