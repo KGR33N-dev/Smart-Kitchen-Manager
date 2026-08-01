@@ -6,12 +6,10 @@ Celery Tasks — Heavy background processing
 - update_expiry_statuses: Auto-expire stale items (6h beat)
 """
 import asyncio
-import json
 from datetime import datetime, timezone
 
-from celery import shared_task
 from celery.utils.log import get_task_logger
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.tasks.celery_app import celery_app
 
@@ -29,67 +27,17 @@ def _run(coro):
 
 @celery_app.task(bind=True, name="app.tasks.ai_tasks.process_receipt_image")
 def process_receipt_image(self, scan_id: int, user_id: int, image_path: str):
-    """
-    Background task:
-    1. Fetches user's AI feedback history for few-shot context
-    2. Calls GPT-4o Vision to parse receipt
-    3. Bulk-creates FoodItems for the user
-    4. Updates ScanHistory record with results
-    """
+    """Background receipt OCR + parse → bulk-create FoodItems (shared logic)."""
     async def _inner():
         from app.core.database import AsyncSessionLocal
-        from app.repositories.scan_repo import ScanRepository, AIFeedbackRepository
-        from app.services.ai_service import analyse_receipt
-        from app.services.food_service import FoodService
-        from app.models.food import ScanHistory
+        from app.services.scan_processing import run_receipt_processing
 
         async with AsyncSessionLocal() as db:
-            # Update task status
-            scan_repo = ScanRepository(db)
-            await scan_repo.update_task(scan_id, self.request.id, "processing")
-            await db.commit()
-
-            # Get few-shot history
-            fb_repo = AIFeedbackRepository(db)
-            history = await fb_repo.get_recent_for_user(user_id)
-            history_dicts = [
-                {
-                    "item_name": f.item_name,
-                    "ai_prediction": f.ai_prediction,
-                    "user_correction": f.user_correction,
-                    "confirmed": f.confirmed,
-                }
-                for f in history
-            ]
-
-            # Call AI
             try:
-                result = await analyse_receipt(image_path, history_dicts)
-                items_data = result.get("items", [])
-
-                # Bulk create food items
-                food_svc = FoodService(db)
-                created = await food_svc.bulk_create_from_receipt(user_id, items_data)
-
-                # Update scan record
-                await scan_repo.update_task(scan_id, self.request.id, "completed")
-                await db.execute(
-                    update(ScanHistory)
-                    .where(ScanHistory.id == scan_id)
-                    .values(
-                        parsed_items_count=len(created),
-                        ai_response_json=json.dumps(result, ensure_ascii=False),
-                        task_status="completed",
-                    )
+                return await run_receipt_processing(
+                    db, scan_id, user_id, image_path, task_id=self.request.id
                 )
-                await db.commit()
-                logger.info(f"Receipt processed: {len(created)} items created for user {user_id}")
-                return {"created": len(created)}
-
-            except Exception as exc:
-                await scan_repo.update_task(scan_id, self.request.id, "failed")
-                await db.commit()
-                logger.error(f"Receipt AI failed: {exc}")
+            except Exception as exc:  # noqa: BLE001
                 raise self.retry(exc=exc, countdown=30)
 
     return _run(_inner())
@@ -97,56 +45,17 @@ def process_receipt_image(self, scan_id: int, user_id: int, image_path: str):
 
 @celery_app.task(bind=True, name="app.tasks.ai_tasks.process_camera_frame")
 def process_camera_frame(self, scan_id: int, user_id: int, image_path: str, item_name: str):
-    """
-    IoT camera freshness analysis — updates the related FoodItem status.
-    """
+    """IoT camera freshness analysis (shared logic)."""
     async def _inner():
         from app.core.database import AsyncSessionLocal
-        from app.repositories.scan_repo import ScanRepository, AIFeedbackRepository
-        from app.services.ai_service import analyse_freshness
-        from app.models.food import ScanHistory, FoodItem, ItemStatus
-        from sqlalchemy import update
+        from app.services.scan_processing import run_camera_processing
 
         async with AsyncSessionLocal() as db:
-            fb_repo = AIFeedbackRepository(db)
-            history = await fb_repo.get_recent_for_user(user_id)
-            history_dicts = [
-                {
-                    "item_name": f.item_name,
-                    "ai_prediction": f.ai_prediction,
-                    "user_correction": f.user_correction,
-                    "confirmed": f.confirmed,
-                }
-                for f in history
-            ]
-
             try:
-                result = await analyse_freshness(image_path, item_name, history_dicts)
-                ai_status = result.get("status", "fresh")
-                confidence = result.get("confidence", 0.0)
-
-                status_map = {
-                    "fresh": ItemStatus.FRESH,
-                    "expiring_soon": ItemStatus.EXPIRING_SOON,
-                    "expired": ItemStatus.EXPIRED,
-                }
-                new_status = status_map.get(ai_status, ItemStatus.PENDING_VERIFICATION)
-
-                # Mark item as pending AI verification
-                await db.execute(
-                    update(ScanHistory)
-                    .where(ScanHistory.id == scan_id)
-                    .values(
-                        ai_response_json=json.dumps(result),
-                        task_status="completed",
-                    )
+                return await run_camera_processing(
+                    db, scan_id, user_id, image_path, item_name, task_id=self.request.id
                 )
-                await db.commit()
-                logger.info(f"Camera frame analysed: {item_name} → {ai_status}")
-                return {"status": ai_status, "confidence": confidence}
-
-            except Exception as exc:
-                logger.error(f"Camera AI failed: {exc}")
+            except Exception as exc:  # noqa: BLE001
                 raise self.retry(exc=exc, countdown=60)
 
     return _run(_inner())

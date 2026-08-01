@@ -1,16 +1,17 @@
 /**
  * DashboardScreen — Mock data + live user from backend
  */
-import React, { useState } from 'react';
+import React, { useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { differenceInDays, parseISO } from 'date-fns';
 import { Colors, FontSizes, Spacing, Radii, Shadows } from '../theme';
-import { MOCK_ITEMS, computeStats, FoodItem } from '../data/mockData';
-import type { UserOut } from '../api/client';
+import type { FoodItem, UserOut } from '../api/client';
+import { usePantryStore } from '../store/pantryStore';
 
 interface DashboardProps { navigation: any; user?: UserOut; onLogout?: () => void; }
 
@@ -86,13 +87,32 @@ function ExpiringCard({ item }: { item: FoodItem }) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation, user, onLogout }: DashboardProps) {
-  const stats = computeStats(MOCK_ITEMS);
-  const expiring = MOCK_ITEMS.filter(i => i.status === 'expiring_soon' || i.status === 'expired');
-  const displayName = user?.full_name?.split(' ')[0] ?? 'Sarah';
+  const items = usePantryStore(s => s.items);
+  const isLoading = usePantryStore(s => s.isLoading);
+  const refreshAll = usePantryStore(s => s.refreshAll);
+  const stats = {
+    fresh: usePantryStore(s => s.freshCount),
+    expiringSoon: usePantryStore(s => s.expiringSoonCount),
+    expired: usePantryStore(s => s.expiredCount),
+    zeroWasteScore: usePantryStore(s => s.zeroWasteScore),
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshAll();
+    }, [refreshAll]),
+  );
+
+  const expiring = items.filter(i => i.status === 'expiring_soon' || i.status === 'expired');
+  const displayName = user?.full_name?.split(' ')[0] ?? 'Szefie';
 
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
+      >
 
         {/* Header */}
         <View style={s.header}>
@@ -123,7 +143,7 @@ export default function DashboardScreen({ navigation, user, onLogout }: Dashboar
         <View style={s.ctaRow}>
           <TouchableOpacity
             style={[s.ctaBtn, { backgroundColor: Colors.primary }]}
-            onPress={() => { }}
+            onPress={() => navigation.navigate('Scan')}
           >
             <Ionicons name="camera-outline" size={18} color={Colors.white} />
             <Text style={s.ctaBtnText}>Skanuj paragon</Text>
@@ -144,11 +164,21 @@ export default function DashboardScreen({ navigation, user, onLogout }: Dashboar
             <Text style={s.viewAll}>Zobacz wszystkie</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-          {expiring.map(item => (
-            <ExpiringCard key={item.id} item={item} />
-          ))}
-        </ScrollView>
+        {expiring.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            {expiring.map(item => (
+              <ExpiringCard key={item.id} item={item} />
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={s.emptyBox}>
+            <Text style={s.emptyText}>
+              {items.length === 0
+                ? 'Brak produktów. Dodaj pierwszy produkt lub zeskanuj paragon!'
+                : 'Świetnie! Nic się nie kończy w najbliższym czasie 🎉'}
+            </Text>
+          </View>
+        )}
 
         {/* AI insight pill */}
         <View style={s.insightCard}>
@@ -238,4 +268,10 @@ const s = StyleSheet.create({
     padding: Spacing.md, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: Spacing.base,
   },
   insightText: { flex: 1, fontSize: FontSizes.sm, color: Colors.primaryDark, fontWeight: '600', lineHeight: 18 },
+
+  emptyBox: {
+    backgroundColor: Colors.white, borderRadius: Radii.lg, padding: Spacing.lg,
+    marginBottom: 8, ...Shadows.card,
+  },
+  emptyText: { fontSize: FontSizes.sm, color: Colors.textMuted, textAlign: 'center' },
 });

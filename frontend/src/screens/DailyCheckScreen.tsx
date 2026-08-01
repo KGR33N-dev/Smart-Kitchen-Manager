@@ -1,19 +1,46 @@
 /**
  * DailyCheckScreen — simple button verification, no reanimated/swipe
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, FontSizes, Spacing, Radii, Shadows } from '../theme';
-import { MOCK_PENDING, FoodItem } from '../data/mockData';
+import { FoodItem } from '../api/client';
+import { usePantryStore } from '../store/pantryStore';
 
 export default function DailyCheckScreen({ navigation }: any) {
-  const [items, setItems] = useState<FoodItem[]>(MOCK_PENDING);
+  const pendingVerification = usePantryStore(s => s.pendingVerification);
+  const fetchPending = usePantryStore(s => s.fetchPendingVerification);
+  const verifyItem = usePantryStore(s => s.verifyItem);
+
+  const [items, setItems] = useState<FoodItem[]>([]);
   const [current, setCurrent] = useState(0);
   const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Snapshot the queue once on mount so the store refreshing mid-check
+  // doesn't reshuffle the cards under the user.
+  useEffect(() => {
+    fetchPending().finally(() => setLoading(false));
+  }, [fetchPending]);
+  useEffect(() => {
+    if (loading) return;
+    setItems(pendingVerification);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={s.doneBox}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (done || items.length === 0) {
     return (
@@ -35,14 +62,14 @@ export default function DailyCheckScreen({ navigation }: any) {
   const item = items[current];
   const progress = (current / items.length) * 100;
 
-  const confirm = () => {
+  const advance = (confirmed: boolean) => {
+    // Fire-and-forget the verification; UI advances immediately.
+    verifyItem(item.id, confirmed, item.ai_confidence ?? undefined).catch(() => { /* ignore */ });
     if (current + 1 >= items.length) setDone(true);
     else setCurrent(c => c + 1);
   };
-  const reject = () => {
-    if (current + 1 >= items.length) setDone(true);
-    else setCurrent(c => c + 1);
-  };
+  const confirm = () => advance(true);
+  const reject = () => advance(false);
 
   return (
     <SafeAreaView style={s.safe}>

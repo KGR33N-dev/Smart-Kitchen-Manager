@@ -3,6 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Local databases & test artifacts
+*.db
+kitchen.db
+test_kitchen.db
+.pytest_cache/
+backend/uploads/
+
 # C extensions
 *.so
 

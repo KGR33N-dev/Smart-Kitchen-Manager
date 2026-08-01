@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -6,13 +6,17 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Colors } from '../theme';
-import { authApi, UserOut } from '../api/client';
+import { useAuthStore } from '../store/authStore';
+import { UserOut } from '../api/client';
 
 import AuthScreen from '../screens/AuthScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import PantryScreen from '../screens/PantryScreen';
 import DailyCheckScreen from '../screens/DailyCheckScreen';
-import PlaceholderScreen from '../screens/PlaceholderScreen';
+import ScannerScreen from '../screens/ScannerScreen';
+import LeftoversScreen from '../screens/LeftoversScreen';
+import CommunityScreen from '../screens/CommunityScreen';
+import AddManualItemScreen from '../screens/AddManualItemScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -55,32 +59,29 @@ function MainTabs({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
         ),
       })}
     >
-      <Tab.Screen name="Dashboard">
+      <Tab.Screen name="Dashboard" options={{ tabBarLabel: 'Pulpit' }}>
         {props => <DashboardScreen {...props} user={user} onLogout={onLogout} />}
       </Tab.Screen>
-      <Tab.Screen name="Pantry" component={PantryScreen} />
-      <Tab.Screen name="Scan" component={PlaceholderScreen}
-        options={{ tabBarLabel: 'Skanuj' }} />
-      <Tab.Screen name="Leftovers" component={PlaceholderScreen}
-        options={{ tabBarLabel: 'Resztki' }} />
-      <Tab.Screen name="Community" component={PlaceholderScreen}
-        options={{ tabBarLabel: 'Społeczność' }} />
+      <Tab.Screen name="Pantry" component={PantryScreen} options={{ tabBarLabel: 'Spiżarnia' }} />
+      <Tab.Screen name="Scan" component={ScannerScreen} options={{ tabBarLabel: 'Skanuj' }} />
+      <Tab.Screen name="Leftovers" component={LeftoversScreen} options={{ tabBarLabel: 'Resztki' }} />
+      <Tab.Screen name="Community" component={CommunityScreen} options={{ tabBarLabel: 'Społeczność' }} />
     </Tab.Navigator>
   );
 }
 
 export default function AppNavigator() {
-  const [user, setUser] = useState<UserOut | null>(null);
-  const [loading, setLoading] = useState(true);
+  const user = useAuthStore(s => s.user);
+  const isLoading = useAuthStore(s => s.isLoading);
+  const loadStoredUser = useAuthStore(s => s.loadStoredUser);
+  const logout = useAuthStore(s => s.logout);
+  const setUser = useAuthStore(s => s.setUser);
 
-  // Try to restore session from stored token
   useEffect(() => {
-    authApi.loadMe().then(u => { setUser(u); setLoading(false); });
-  }, []);
+    loadStoredUser();
+  }, [loadStoredUser]);
 
-  const handleLogout = () => { authApi.logout(); setUser(null); };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primaryBg }}>
         <ActivityIndicator color={Colors.primary} size="large" />
@@ -96,11 +97,16 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Main">
-          {() => <MainTabs user={user} onLogout={handleLogout} />}
+          {() => <MainTabs user={user} onLogout={logout} />}
         </Stack.Screen>
         <Stack.Screen
           name="DailyCheck"
           component={DailyCheckScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="AddManualItem"
+          component={AddManualItemScreen}
           options={{ presentation: 'modal' }}
         />
       </Stack.Navigator>

@@ -56,18 +56,21 @@ async def upload_receipt(
     )
     await db.commit()
 
-    # Dispatch Celery task (deferred import to avoid circular)
-    from app.tasks.ai_tasks import process_receipt_image
-    task = process_receipt_image.delay(scan.id, current_user.id, stored_path)
-
-    # Update task_id
-    await scan_repo.update_task(scan.id, task.id, "queued")
-    await db.commit()
-
-    # Increment scan usage counter
+    # Increment scan usage counter (freemium)
     user_repo = UserRepository(db)
     await user_repo.increment_scan_count(current_user.id)
     await db.commit()
+
+    if settings.USE_CELERY:
+        # Dispatch Celery task (deferred import to avoid circular)
+        from app.tasks.ai_tasks import process_receipt_image
+        task = process_receipt_image.delay(scan.id, current_user.id, stored_path)
+        await scan_repo.update_task(scan.id, task.id, "queued")
+        await db.commit()
+    else:
+        # Inline processing — no Redis/Celery needed.
+        from app.services.scan_processing import run_receipt_processing
+        await run_receipt_processing(db, scan.id, current_user.id, stored_path)
 
     await db.refresh(scan)
     return scan
@@ -93,10 +96,14 @@ async def upload_camera_frame(
     )
     await db.commit()
 
-    from app.tasks.ai_tasks import process_camera_frame
-    task = process_camera_frame.delay(scan.id, current_user.id, stored_path, item_name)
-    await scan_repo.update_task(scan.id, task.id, "queued")
-    await db.commit()
+    if settings.USE_CELERY:
+        from app.tasks.ai_tasks import process_camera_frame
+        task = process_camera_frame.delay(scan.id, current_user.id, stored_path, item_name)
+        await scan_repo.update_task(scan.id, task.id, "queued")
+        await db.commit()
+    else:
+        from app.services.scan_processing import run_camera_processing
+        await run_camera_processing(db, scan.id, current_user.id, stored_path, item_name)
 
     await db.refresh(scan)
     return scan
@@ -104,7 +111,9 @@ async def upload_camera_frame(
 
 @router.get("/status/{task_id}")
 async def task_status(task_id: str, current_user: User = Depends(get_current_user)):
-    """Poll Celery task status."""
+    """Poll Celery task status. In inline mode processing already finished."""
+    if not settings.USE_CELERY:
+        return {"task_id": task_id, "status": "SUCCESS", "result": None}
     from app.tasks.celery_app import celery_app
     result = celery_app.AsyncResult(task_id)
     return {

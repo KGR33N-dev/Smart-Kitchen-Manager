@@ -1,44 +1,109 @@
-// Lightweight auth client — no axios dependency (avoids import.meta issues)
+/**
+ * Smart-Fridge API client.
+ *
+ * Single, dependency-light client built on fetch (no axios — avoids the
+ * import.meta issues under Expo/Metro). All screens and stores use this module.
+ */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Lokalny adres IP zamiast localhost dla poprawnej komunikacji w Expo Go:
+// Configure via EXPO_PUBLIC_API_URL. Fallback is a LAN IP so a phone running
+// Expo Go can reach the dev backend (localhost won't work from a device).
 const BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.0.178:8000';
+
+// ── Types (mirror the backend Pydantic schemas) ─────────────────────────────
+
+export type ItemStatus = 'fresh' | 'expiring_soon' | 'expired' | 'pending_verification';
 
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
   token_type: string;
 }
+
 export interface UserOut {
   id: number;
   email: string;
   full_name: string;
+  is_active: boolean;
+  subscription_tier: 'free' | 'premium';
   is_premium: boolean;
-  scan_count_month: number;
+  scans_this_month: number;
+  subscription_valid_until: string | null;
+  created_at: string;
 }
 
-// ── Token storage (web: AsyncStorage, native: AsyncStorage) ─────────────
+export interface Category {
+  id: number;
+  name: string;
+  icon: string;
+}
+
+export interface FoodItem {
+  id: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  location: string;
+  expiry_date: string | null;
+  status: ItemStatus;
+  ai_verified: boolean;
+  ai_confidence: number | null;
+  image_url: string | null;
+  category: Category | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FoodItemCreate {
+  name: string;
+  quantity?: number;
+  unit?: string;
+  location?: string;
+  expiry_date?: string | null;
+  category_id?: number | null;
+  image_url?: string | null;
+}
+
+export type FoodItemUpdate = Partial<
+  Pick<FoodItem, 'name' | 'quantity' | 'unit' | 'location' | 'expiry_date' | 'status'>
+> & { category_id?: number | null };
+
+export interface ScanOut {
+  id: number;
+  scan_type: string;
+  original_filename: string;
+  parsed_items_count: number;
+  task_id: string | null;
+  task_status: string;
+  created_at: string;
+}
+
+export interface ApiError {
+  status: number;
+  detail: string;
+}
+
+// ── Token storage ────────────────────────────────────────────────────────────
+
 let _accessToken: string | null = null;
 
 async function saveToken(t: string) {
   _accessToken = t;
-  try { await AsyncStorage.setItem('access_token', t); } catch { }
+  try { await AsyncStorage.setItem('access_token', t); } catch { /* noop */ }
 }
 async function loadToken(): Promise<string | null> {
   if (_accessToken) return _accessToken;
-  try { _accessToken = await AsyncStorage.getItem('access_token'); } catch { }
+  try { _accessToken = await AsyncStorage.getItem('access_token'); } catch { /* noop */ }
   return _accessToken;
 }
 async function clearToken() {
   _accessToken = null;
-  try { await AsyncStorage.removeItem('access_token'); } catch { }
+  try { await AsyncStorage.removeItem('access_token'); } catch { /* noop */ }
 }
 
-// ── Core fetch helper ───────────────────────────────────────────────────────
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+// ── Core fetch helpers ───────────────────────────────────────────────────────
+
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await loadToken();
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -50,14 +115,44 @@ async function apiFetch<T>(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw { status: res.status, detail: body?.detail ?? res.statusText };
+    throw { status: res.status, detail: (body as any)?.detail ?? res.statusText } as ApiError;
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+/** Multipart upload — deliberately does NOT set Content-Type (fetch adds boundary). */
+async function uploadFile<T>(path: string, uri: string, field = 'file'): Promise<T> {
+  const token = await loadToken();
+  const form = new FormData();
+  const name = uri.split('/').pop() ?? 'upload.jpg';
+  const ext = name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
+  // React Native FormData file shape:
+  form.append(field, { uri, name, type } as any);
+
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw { status: res.status, detail: (body as any)?.detail ?? res.statusText } as ApiError;
   }
   return res.json() as Promise<T>;
 }
 
-// ── Public API ──────────────────────────────────────────────────────────────
+const qs = (params: Record<string, string | number | undefined>) => {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '');
+  return entries.length
+    ? '?' + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&')
+    : '';
+};
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
 export const authApi = {
-  /** Login with email + password, persist token */
   async login(email: string, password: string): Promise<UserOut> {
     const body = new URLSearchParams({ username: email, password });
     const res = await fetch(`${BASE}/api/v1/auth/token`, {
@@ -67,14 +162,13 @@ export const authApi = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw { status: res.status, detail: err?.detail ?? 'Invalid credentials' };
+      throw { status: res.status, detail: (err as any)?.detail ?? 'Invalid credentials' } as ApiError;
     }
     const tokens: TokenPair = await res.json();
     await saveToken(tokens.access_token);
     return apiFetch<UserOut>('/api/v1/auth/me');
   },
 
-  /** Register new account, then auto-login */
   async register(email: string, password: string, full_name: string): Promise<UserOut> {
     await apiFetch<UserOut>('/api/v1/auth/register', {
       method: 'POST',
@@ -83,7 +177,6 @@ export const authApi = {
     return authApi.login(email, password);
   },
 
-  /** Load currently stored token + fetch /me */
   async loadMe(): Promise<UserOut | null> {
     const token = await loadToken();
     if (!token) return null;
@@ -95,12 +188,72 @@ export const authApi = {
     }
   },
 
+  me: () => apiFetch<UserOut>('/api/v1/auth/me'),
+
   async logout() { await clearToken(); },
 };
 
-/** Thin food-items GET — used by screens when backend is available */
+// ── Food items ──────────────────────────────────────────────────────────────
+
 export const itemsApi = {
-  async list() {
-    return apiFetch<any[]>('/api/v1/items/');
-  },
+  list: (filters: { location?: string; category_id?: number; status?: ItemStatus } = {}) =>
+    apiFetch<FoodItem[]>(`/api/v1/items/${qs(filters)}`),
+
+  get: (id: number) => apiFetch<FoodItem>(`/api/v1/items/${id}`),
+
+  create: (payload: FoodItemCreate) =>
+    apiFetch<FoodItem>('/api/v1/items/', { method: 'POST', body: JSON.stringify(payload) }),
+
+  update: (id: number, payload: FoodItemUpdate) =>
+    apiFetch<FoodItem>(`/api/v1/items/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+
+  remove: (id: number) =>
+    apiFetch<void>(`/api/v1/items/${id}`, { method: 'DELETE' }),
+
+  expiring: (days = 3) =>
+    apiFetch<FoodItem[]>(`/api/v1/items/expiring${qs({ days })}`),
+
+  pendingVerification: () =>
+    apiFetch<FoodItem[]>('/api/v1/items/pending-verification'),
+
+  verify: (id: number, confirmed: boolean, ai_prediction = 'fresh', ai_confidence?: number) =>
+    apiFetch<FoodItem>(`/api/v1/items/${id}/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmed, ai_prediction, ai_confidence }),
+    }),
 };
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export const categoriesApi = {
+  list: () => apiFetch<Category[]>('/api/v1/categories/'),
+};
+
+// ── Uploads (receipt / camera) ────────────────────────────────────────────────
+
+export const uploadApi = {
+  receipt: (uri: string) => uploadFile<ScanOut>('/api/v1/upload/receipt', uri),
+  camera: (uri: string, itemName = 'Unknown item') =>
+    uploadFile<ScanOut>(`/api/v1/upload/camera${qs({ item_name: itemName })}`, uri),
+  pollStatus: (taskId: string) =>
+    apiFetch<{ task_id: string; status: string; result: unknown }>(`/api/v1/upload/status/${taskId}`),
+};
+
+// ── Payments ────────────────────────────────────────────────────────────────
+
+export const paymentsApi = {
+  checkout: () => apiFetch<{ checkout_url: string }>('/api/v1/payments/checkout', { method: 'POST' }),
+  portal: () => apiFetch<{ portal_url: string }>('/api/v1/payments/portal', { method: 'POST' }),
+};
+
+// ── Local helpers (shared UI derivations) ─────────────────────────────────────
+
+export const computeStats = (items: FoodItem[]) => ({
+  total: items.length,
+  fresh: items.filter(i => i.status === 'fresh').length,
+  expiringSoon: items.filter(i => i.status === 'expiring_soon').length,
+  expired: items.filter(i => i.status === 'expired').length,
+  zeroWasteScore: items.length
+    ? Math.round((items.filter(i => i.status !== 'expired').length / items.length) * 100)
+    : 100,
+});

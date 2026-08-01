@@ -1,15 +1,17 @@
 /**
- * PantryScreen — Mock data, full list view
+ * PantryScreen — live pantry list backed by the API.
  */
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { differenceInDays, parseISO } from 'date-fns';
 import { Colors, FontSizes, Spacing, Radii, Shadows } from '../theme';
-import { MOCK_ITEMS, FoodItem, ItemStatus } from '../data/mockData';
+import { FoodItem, ItemStatus } from '../api/client';
+import { usePantryStore } from '../store/pantryStore';
 
 const STATUS_COLORS: Record<ItemStatus, string> = {
   fresh: Colors.statusFresh,
@@ -24,14 +26,18 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
   pending_verification: 'Niesprawdzone',
 };
 
-function ItemRow({ item }: { item: FoodItem }) {
+function ItemRow({ item, onDelete }: { item: FoodItem; onDelete: (item: FoodItem) => void }) {
   const days = item.expiry_date
     ? differenceInDays(parseISO(item.expiry_date), new Date())
     : null;
   const color = STATUS_COLORS[item.status];
 
   return (
-    <View style={s.row}>
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onLongPress={() => onDelete(item)}
+      style={s.row}
+    >
       <Text style={s.rowEmoji}>{item.category?.icon ?? '🍽️'}</Text>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={s.rowName}>{item.name}</Text>
@@ -47,26 +53,46 @@ function ItemRow({ item }: { item: FoodItem }) {
           </Text>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 const FILTERS: (ItemStatus | 'all')[] = ['all', 'fresh', 'expiring_soon', 'expired'];
-const FILTER_LABELS = { all: 'Wszystkie', fresh: 'Świeże', expiring_soon: 'Kończące się', expired: 'Przeterminowane' };
+const FILTER_LABELS: Record<string, string> = {
+  all: 'Wszystkie', fresh: 'Świeże', expiring_soon: 'Kończące się', expired: 'Przeterminowane',
+};
 
-export default function PantryScreen() {
+export default function PantryScreen({ navigation }: any) {
   const [filter, setFilter] = useState<ItemStatus | 'all'>('all');
   const [query, setQuery] = useState('');
 
-  const items = MOCK_ITEMS
+  const allItems = usePantryStore(s => s.items);
+  const isLoading = usePantryStore(s => s.isLoading);
+  const fetchItems = usePantryStore(s => s.fetchItems);
+  const removeItem = usePantryStore(s => s.removeItem);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchItems();
+    }, [fetchItems]),
+  );
+
+  const items = allItems
     .filter(i => filter === 'all' || i.status === filter)
     .filter(i => i.name.toLowerCase().includes(query.toLowerCase()));
+
+  const confirmDelete = (item: FoodItem) => {
+    Alert.alert('Usunąć produkt?', `„${item.name}" zostanie usunięty ze spiżarni.`, [
+      { text: 'Anuluj', style: 'cancel' },
+      { text: 'Usuń', style: 'destructive', onPress: () => removeItem(item.id).catch(() => { }) },
+    ]);
+  };
 
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
         <Text style={s.title}>🗂️ Spiżarnia</Text>
-        <Text style={s.subtitle}>{MOCK_ITEMS.length} produktów</Text>
+        <Text style={s.subtitle}>{allItems.length} produktów · przytrzymaj, aby usunąć</Text>
       </View>
 
       {/* Search */}
@@ -104,11 +130,14 @@ export default function PantryScreen() {
       <FlatList
         data={items}
         keyExtractor={i => String(i.id)}
-        renderItem={({ item }) => <ItemRow item={item} />}
+        renderItem={({ item }) => <ItemRow item={item} onDelete={confirmDelete} />}
         contentContainerStyle={{ padding: Spacing.base, gap: Spacing.sm, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={fetchItems} tintColor={Colors.primary} />}
         ListEmptyComponent={() => (
-          <Text style={{ textAlign: 'center', color: Colors.textMuted, marginTop: 40 }}>Brak produktów</Text>
+          <Text style={{ textAlign: 'center', color: Colors.textMuted, marginTop: 40 }}>
+            {isLoading ? 'Ładowanie…' : 'Brak produktów. Dodaj pierwszy przyciskiem +'}
+          </Text>
         )}
       />
 
@@ -116,7 +145,7 @@ export default function PantryScreen() {
       <TouchableOpacity
         style={s.fab}
         activeOpacity={0.8}
-        onPress={() => console.log('Dodaj nowy item')}
+        onPress={() => navigation.navigate('AddManualItem')}
       >
         <Ionicons name="add" size={32} color={Colors.white} />
       </TouchableOpacity>

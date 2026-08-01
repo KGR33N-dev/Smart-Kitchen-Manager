@@ -99,13 +99,22 @@ class FoodService:
     async def bulk_create_from_receipt(
         self, owner_id: int, items_data: list[dict]
     ) -> list[FoodItem]:
-        """Creates multiple FoodItems from a parsed receipt AI response."""
-        from datetime import timedelta
+        """Creates multiple FoodItems from a parsed receipt AI response.
+
+        Links each item to an existing category by matching the AI-provided
+        category name (case-insensitive), falling back to no category.
+        """
+        from app.repositories.category_repo import CategoryRepository
+
+        cat_repo = CategoryRepository(self.repo.db)
+        categories = {c.name.lower(): c.id for c in await cat_repo.list_all()}
+
         created = []
         for d in items_data:
             expiry_date = None
             if d.get("estimated_expiry_days") is not None:
                 expiry_date = datetime.now(timezone.utc) + timedelta(days=d["estimated_expiry_days"])
+            category_id = categories.get(str(d.get("category", "")).lower())
             item = await self.repo.create(
                 owner_id=owner_id,
                 name=d.get("name", "Unknown"),
@@ -113,6 +122,7 @@ class FoodService:
                 unit=d.get("unit", "szt."),
                 status=_compute_status(expiry_date),
                 expiry_date=expiry_date,
+                category_id=category_id,
             )
             created.append(item)
         return created

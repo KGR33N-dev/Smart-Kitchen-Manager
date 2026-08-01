@@ -1,9 +1,15 @@
 /**
- * Zustand Pantry Store
- * Real-time fridge/pantry state management with optimistic updates.
+ * Zustand Pantry Store — backend-backed fridge/pantry state.
+ * All reads/writes go through the fetch API client; the store keeps a local
+ * cache and derived stats for the UI.
  */
 import { create } from 'zustand';
-import { FoodItem, itemsApi, ItemStatus } from '../api/client';
+import {
+  FoodItem,
+  FoodItemCreate,
+  FoodItemUpdate,
+  itemsApi,
+} from '../api/client';
 
 interface PantryState {
   items: FoodItem[];
@@ -12,28 +18,32 @@ interface PantryState {
   isLoading: boolean;
   error: string | null;
 
-  // Stats
+  // Derived stats
   totalItems: number;
   freshCount: number;
   expiringSoonCount: number;
   expiredCount: number;
   zeroWasteScore: number;
 
-  // Actions
+  // Reads
   fetchItems: () => Promise<void>;
   fetchExpiring: (days?: number) => Promise<void>;
   fetchPendingVerification: () => Promise<void>;
-  addItem: (item: FoodItem) => void;
-  updateItem: (item: FoodItem) => void;
-  removeItem: (id: number) => void;
-  verifyItem: (id: number, confirmed: boolean) => void;
+  refreshAll: () => Promise<void>;
+
+  // Writes
+  createItem: (payload: FoodItemCreate) => Promise<FoodItem>;
+  updateItem: (id: number, payload: FoodItemUpdate) => Promise<void>;
+  removeItem: (id: number) => Promise<void>;
+  verifyItem: (id: number, confirmed: boolean, aiConfidence?: number) => Promise<void>;
+
   computeStats: () => void;
 }
 
-const computeZeroWasteScore = (items: FoodItem[]): number => {
+const zeroWaste = (items: FoodItem[]): number => {
   if (items.length === 0) return 100;
-  const fresh = items.filter(i => i.status === 'fresh').length;
-  return Math.round((fresh / items.length) * 100);
+  const notWasted = items.filter(i => i.status !== 'expired').length;
+  return Math.round((notWasted / items.length) * 100);
 };
 
 export const usePantryStore = create<PantryState>((set, get) => ({
@@ -55,18 +65,18 @@ export const usePantryStore = create<PantryState>((set, get) => ({
       freshCount: items.filter(i => i.status === 'fresh').length,
       expiringSoonCount: items.filter(i => i.status === 'expiring_soon').length,
       expiredCount: items.filter(i => i.status === 'expired').length,
-      zeroWasteScore: computeZeroWasteScore(items),
+      zeroWasteScore: zeroWaste(items),
     });
   },
 
   fetchItems: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await itemsApi.list();
-      set({ items: res.data });
+      const items = await itemsApi.list();
+      set({ items });
       get().computeStats();
     } catch (e: any) {
-      set({ error: e.message });
+      set({ error: e?.detail ?? 'Nie udało się pobrać produktów' });
     } finally {
       set({ isLoading: false });
     }
@@ -74,33 +84,42 @@ export const usePantryStore = create<PantryState>((set, get) => ({
 
   fetchExpiring: async (days = 3) => {
     try {
-      const res = await itemsApi.expiring(days);
-      set({ expiringItems: res.data });
-    } catch { }
+      set({ expiringItems: await itemsApi.expiring(days) });
+    } catch { /* non-critical */ }
   },
 
   fetchPendingVerification: async () => {
     try {
-      const res = await itemsApi.pendingVerification();
-      set({ pendingVerification: res.data });
-    } catch { }
+      set({ pendingVerification: await itemsApi.pendingVerification() });
+    } catch { /* non-critical */ }
   },
 
-  addItem: (item) => {
-    set(state => ({ items: [item, ...state.items] }));
+  refreshAll: async () => {
+    await Promise.all([
+      get().fetchItems(),
+      get().fetchExpiring(),
+      get().fetchPendingVerification(),
+    ]);
+  },
+
+  createItem: async (payload) => {
+    const created = await itemsApi.create(payload);
+    set(state => ({ items: [created, ...state.items] }));
     get().computeStats();
+    return created;
   },
 
-  updateItem: (item) => {
+  updateItem: async (id, payload) => {
+    const updated = await itemsApi.update(id, payload);
     set(state => ({
-      items: state.items.map(i => (i.id === item.id ? item : i)),
-      expiringItems: state.expiringItems.map(i => (i.id === item.id ? item : i)),
-      pendingVerification: state.pendingVerification.filter(i => i.id !== item.id),
+      items: state.items.map(i => (i.id === id ? updated : i)),
+      expiringItems: state.expiringItems.map(i => (i.id === id ? updated : i)),
     }));
     get().computeStats();
   },
 
-  removeItem: (id) => {
+  removeItem: async (id) => {
+    await itemsApi.remove(id);
     set(state => ({
       items: state.items.filter(i => i.id !== id),
       expiringItems: state.expiringItems.filter(i => i.id !== id),
@@ -109,14 +128,11 @@ export const usePantryStore = create<PantryState>((set, get) => ({
     get().computeStats();
   },
 
-  verifyItem: (id, confirmed) => {
+  verifyItem: async (id, confirmed, aiConfidence) => {
+    const updated = await itemsApi.verify(id, confirmed, 'fresh', aiConfidence);
     set(state => ({
       pendingVerification: state.pendingVerification.filter(i => i.id !== id),
-      items: state.items.map(i =>
-        i.id === id
-          ? { ...i, ai_verified: true, status: confirmed ? i.status : 'expired' as ItemStatus }
-          : i,
-      ),
+      items: state.items.map(i => (i.id === id ? updated : i)),
     }));
     get().computeStats();
   },

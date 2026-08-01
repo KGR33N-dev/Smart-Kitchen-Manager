@@ -2,13 +2,22 @@
 Stripe Payment Service — Freemium subscription management
 Handles: checkout sessions, webhook verification, subscription lifecycle
 """
-import stripe
 from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
 from app.core.logging import log
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+
+def _stripe():
+    """Lazy Stripe import + key configuration.
+
+    Keeps `stripe` an optional dependency so the app (and tests) run without it
+    installed when payments are not used.
+    """
+    import stripe  # noqa: PLC0415
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    return stripe
 
 
 # ─── Checkout ─────────────────────────────────────────────────────────────────
@@ -21,6 +30,7 @@ async def create_checkout_session(
     cancel_url: str,
 ) -> str:
     """Creates a Stripe Checkout session and returns the hosted URL."""
+    stripe = _stripe()
     try:
         session = stripe.checkout.Session.create(
             mode="subscription",
@@ -46,6 +56,7 @@ async def create_customer_portal_session(
     return_url: str,
 ) -> str:
     """Creates a Stripe Customer Portal session for subscription management."""
+    stripe = _stripe()
     session = stripe.billing_portal.Session.create(
         customer=stripe_customer_id,
         return_url=return_url,
@@ -60,6 +71,7 @@ async def handle_webhook(request: Request, db) -> dict:
     Verifies Stripe webhook signature and dispatches subscription lifecycle events.
     Returns handled event type.
     """
+    stripe = _stripe()
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
 

@@ -36,7 +36,7 @@ type Mode = 'idle' | 'detecting' | 'uploading' | 'processing' | 'done';
 // Simulated stability detection (in production: compare pixel hash of frames)
 const useStabilityDetector = (enabled: boolean, onStable: () => void) => {
   const stableFrames = useRef(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (!enabled) {
@@ -67,7 +67,7 @@ export default function ScannerScreen({ navigation }: any) {
   const [autoMode, setAutoMode] = useState(false);
   const [taskStatus, setTaskStatus] = useState('');
   const cameraRef = useRef<any>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const scanLineAnim = useRef(new RNAnimated.Value(0)).current;
   const user = useAuthStore(s => s.user);
   const fetchItems = usePantryStore(s => s.fetchItems);
@@ -103,49 +103,64 @@ export default function ScannerScreen({ navigation }: any) {
 
   // ── Capture & upload ─────────────────────────────────────────────────────
 
+  const onProcessed = async (createdCount: number) => {
+    setMode('done');
+    await fetchItems();
+    Alert.alert(
+      '✅ Paragon przetworzony!',
+      `Dodano ${createdCount} produkt(ów) do spiżarni.`,
+      [{ text: 'Pokaż spiżarnię', onPress: () => navigation.navigate('Pantry') }],
+    );
+    setMode('idle');
+  };
+
+  const uploadReceipt = async (uri: string) => {
+    setMode('uploading');
+    setTaskStatus('queued');
+    const scan = await uploadApi.receipt(uri);
+    // Inline mode: already completed synchronously.
+    if (scan.task_status === 'completed' || !scan.task_id) {
+      await onProcessed(scan.parsed_items_count);
+      return;
+    }
+    // Celery mode: poll for completion.
+    setTaskId(scan.task_id);
+    setMode('processing');
+    startPolling(scan.task_id);
+  };
+
   const doCapture = async () => {
     if (!cameraRef.current || mode === 'uploading') return;
     try {
-      setMode('uploading');
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
-      const res = await uploadApi.receipt(photo.uri);
-      const tid = res.data.task_id;
-      setTaskId(tid);
-      setMode('processing');
-      setTaskStatus('queued');
-      if (tid) startPolling(tid);
+      await uploadReceipt(photo.uri);
     } catch (e: any) {
       setMode('idle');
-      const msg = e?.response?.status === 402
-        ? `Free tier limit reached (${user?.scans_this_month ?? 0}/${10} scans). Upgrade to Premium!`
-        : 'Could not upload receipt. Try again.';
-      Alert.alert('⚠️ Error', msg);
+      const msg = e?.status === 402
+        ? `Limit darmowych skanów wykorzystany (${user?.scans_this_month ?? 0}). Przejdź na Premium!`
+        : 'Nie udało się wysłać paragonu. Spróbuj ponownie.';
+      Alert.alert('⚠️ Błąd', msg);
     }
   };
 
-  // ── Celery task polling ──────────────────────────────────────────────────
+  // ── Celery task polling (only used when backend runs with USE_CELERY) ──────
 
   const startPolling = (tid: string) => {
     pollRef.current = setInterval(async () => {
       try {
         const res = await uploadApi.pollStatus(tid);
-        setTaskStatus(res.data.status);
-        if (res.data.status === 'SUCCESS' || res.data.status === 'FAILURE') {
+        setTaskStatus(res.status);
+        if (res.status === 'SUCCESS' || res.status === 'FAILURE') {
           clearInterval(pollRef.current);
-          setMode('done');
-          if (res.data.status === 'SUCCESS') {
-            await fetchItems();
-            Alert.alert(
-              '✅ Receipt Processed!',
-              `${res.data.result?.created ?? 0} items added to your pantry.`,
-              [{ text: 'View Pantry', onPress: () => navigation.navigate('Pantry') }],
-            );
+          if (res.status === 'SUCCESS') {
+            const created = (res.result as any)?.created ?? 0;
+            await onProcessed(created);
           } else {
-            Alert.alert('❌ Processing Failed', 'AI could not parse the receipt. Try a clearer photo.');
+            setMode('idle');
+            Alert.alert('❌ Przetwarzanie nieudane', 'AI nie odczytało paragonu. Spróbuj wyraźniejszego zdjęcia.');
           }
-          setMode('idle');
         }
-      } catch {}
+      } catch { /* keep polling */ }
     }, 2500);
   };
 
@@ -157,15 +172,10 @@ export default function ScannerScreen({ navigation }: any) {
     const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
     if (!result.canceled && result.assets[0]) {
       try {
-        setMode('uploading');
-        const res = await uploadApi.receipt(result.assets[0].uri);
-        const tid = res.data.task_id;
-        setTaskId(tid);
-        setMode('processing');
-        if (tid) startPolling(tid);
-      } catch {
+        await uploadReceipt(result.assets[0].uri);
+      } catch (e: any) {
         setMode('idle');
-        Alert.alert('Error', 'Upload failed.');
+        Alert.alert('Błąd', e?.status === 402 ? 'Limit skanów wykorzystany.' : 'Wysyłka nie powiodła się.');
       }
     }
   };

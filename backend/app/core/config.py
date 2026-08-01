@@ -17,12 +17,18 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "kitchen_secret"
     POSTGRES_DB: str = "smart_kitchen"
 
+    # Explicit async DB URL override (e.g. for tests). Takes precedence over the
+    # environment-derived default below when set.
+    DATABASE_URL_OVERRIDE: str | None = None
+
     @property
     def DATABASE_URL(self) -> str:
         """
         In development (ENVIRONMENT=development) uses async SQLite via aiosqlite.
         In staging/production uses PostgreSQL via asyncpg.
         """
+        if self.DATABASE_URL_OVERRIDE:
+            return self.DATABASE_URL_OVERRIDE
         if self.ENVIRONMENT == "development":
             return "sqlite+aiosqlite:///./kitchen.db"
         return (
@@ -68,6 +74,17 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "llama3.2-vision"  # Pamiętaj, aby pobrać ten model używając `ollama run llama3.2-vision`
     AI_MAX_TOKENS: int = 800
     AI_FEW_SHOT_HISTORY_COUNT: int = 10   # number of past corrections to include
+
+    # When True, the AI service returns heuristic demo results instead of calling
+    # a real vision model. Lets receipt/camera scanning work end-to-end with zero
+    # external infrastructure. Set to False once a real OpenAI/Ollama model is wired.
+    AI_DEMO_MODE: bool = True
+
+    # ── Background processing ─────────────────────────────────────────────────
+    # When True, scan processing is dispatched to Celery (needs Redis + a worker).
+    # When False (default for local dev), scans are processed inline in the request
+    # so the app works without Redis/Celery running.
+    USE_CELERY: bool = False
 
     # ── Payments (Stripe) ─────────────────────────────────────────────────────
     STRIPE_SECRET_KEY: str = ""

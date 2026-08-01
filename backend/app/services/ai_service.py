@@ -53,6 +53,45 @@ Return ONLY valid JSON:
 """
 
 
+# ─── Demo mode (no external model required) ──────────────────────────────────
+
+_DEMO_BASKET = [
+    {"name": "Mleko 3,2%", "quantity": 1, "unit": "L", "category": "Dairy", "estimated_expiry_days": 5},
+    {"name": "Jogurt naturalny", "quantity": 2, "unit": "szt.", "category": "Dairy", "estimated_expiry_days": 10},
+    {"name": "Chleb pszenny", "quantity": 1, "unit": "szt.", "category": "Bakery", "estimated_expiry_days": 3},
+    {"name": "Pomidory", "quantity": 0.5, "unit": "kg", "category": "Vegetables", "estimated_expiry_days": 6},
+    {"name": "Jabłka", "quantity": 6, "unit": "szt.", "category": "Fruit", "estimated_expiry_days": 14},
+    {"name": "Filet z kurczaka", "quantity": 0.4, "unit": "kg", "category": "Meat", "estimated_expiry_days": 2},
+    {"name": "Sok pomarańczowy", "quantity": 1, "unit": "L", "category": "Drinks", "estimated_expiry_days": 20},
+]
+
+
+def _demo_receipt(image_path: str) -> dict[str, Any]:
+    """Deterministic heuristic 'parse' used when AI_DEMO_MODE is on.
+
+    Picks a subset of a demo basket based on the image file size so different
+    uploads yield slightly different results without any external model.
+    """
+    try:
+        size = Path(image_path).stat().st_size
+    except OSError:
+        size = 0
+    count = 3 + (size % 5)  # 3..7 items
+    items = [dict(x) for x in _DEMO_BASKET[:count]]
+    log.info("ai.receipt.demo", items_found=len(items))
+    return {"items": items, "store_name": "Demo Market", "purchase_date": None}
+
+
+def _demo_freshness(item_name: str) -> dict[str, Any]:
+    log.info("ai.freshness.demo", item=item_name)
+    return {
+        "status": "fresh",
+        "confidence": 0.75,
+        "reasoning": "Demo mode — no vision model configured.",
+        "recommended_action": "keep",
+    }
+
+
 def _build_few_shot_context(feedback_history: list[dict]) -> str:
     """Convert stored correction history into few-shot examples for the prompt."""
     if not feedback_history:
@@ -74,8 +113,18 @@ def _build_few_shot_context(feedback_history: list[dict]) -> str:
     )
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def analyse_receipt(
+    image_path: str,
+    feedback_history: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Public entrypoint — dispatches to demo or the real vision model."""
+    if settings.AI_DEMO_MODE:
+        return _demo_receipt(image_path)
+    return await _analyse_receipt_model(image_path, feedback_history)
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def _analyse_receipt_model(
     image_path: str,
     feedback_history: list[dict] | None = None,
 ) -> dict[str, Any]:
@@ -119,8 +168,19 @@ async def analyse_receipt(
     return result
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def analyse_freshness(
+    image_path: str,
+    item_name: str,
+    feedback_history: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Public entrypoint — dispatches to demo or the real vision model."""
+    if settings.AI_DEMO_MODE:
+        return _demo_freshness(item_name)
+    return await _analyse_freshness_model(image_path, item_name, feedback_history)
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def _analyse_freshness_model(
     image_path: str,
     item_name: str,
     feedback_history: list[dict] | None = None,
