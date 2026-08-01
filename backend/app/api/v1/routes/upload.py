@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_active_household_id
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -36,6 +37,7 @@ async def upload_receipt(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    household_id: int = Depends(get_active_household_id),
 ):
     """
     Accepts a receipt image. Saves it, creates a ScanHistory record,
@@ -64,13 +66,13 @@ async def upload_receipt(
     if settings.USE_CELERY:
         # Dispatch Celery task (deferred import to avoid circular)
         from app.tasks.ai_tasks import process_receipt_image
-        task = process_receipt_image.delay(scan.id, current_user.id, stored_path)
+        task = process_receipt_image.delay(scan.id, current_user.id, household_id, stored_path)
         await scan_repo.update_task(scan.id, task.id, "queued")
         await db.commit()
     else:
         # Inline processing — no Redis/Celery needed.
         from app.services.scan_processing import run_receipt_processing
-        await run_receipt_processing(db, scan.id, current_user.id, stored_path)
+        await run_receipt_processing(db, scan.id, current_user.id, household_id, stored_path)
 
     await db.refresh(scan)
     return scan

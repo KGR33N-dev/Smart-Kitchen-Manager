@@ -21,9 +21,9 @@ class FoodRepository(BaseRepository[FoodItem]):
         )
         return result.scalars().first()
 
-    async def list_for_user(
+    async def list_for_household(
         self,
-        user_id: int,
+        household_id: int,
         location: str | None = None,
         category_id: int | None = None,
         status: ItemStatus | None = None,
@@ -31,7 +31,7 @@ class FoodRepository(BaseRepository[FoodItem]):
         q = (
             select(FoodItem)
             .options(selectinload(FoodItem.category))
-            .where(FoodItem.owner_id == user_id)
+            .where(FoodItem.household_id == household_id)
         )
         if location:
             q = q.where(FoodItem.location == location)
@@ -43,22 +43,22 @@ class FoodRepository(BaseRepository[FoodItem]):
         result = await self.db.execute(q)
         return result.scalars().all()
 
-    async def expiring_soon(self, user_id: int, days: int = 3) -> Sequence[FoodItem]:
+    async def expiring_soon(self, household_id: int, days: int = 3) -> Sequence[FoodItem]:
         cutoff = datetime.now(timezone.utc) + timedelta(days=days)
         result = await self.db.execute(
             select(FoodItem)
             .options(selectinload(FoodItem.category))
-            .where(FoodItem.owner_id == user_id)
+            .where(FoodItem.household_id == household_id)
             .where(FoodItem.expiry_date <= cutoff)
             .order_by(FoodItem.expiry_date.asc())
         )
         return result.scalars().all()
 
-    async def pending_verification(self, user_id: int) -> Sequence[FoodItem]:
+    async def pending_verification(self, household_id: int) -> Sequence[FoodItem]:
         result = await self.db.execute(
             select(FoodItem)
             .options(selectinload(FoodItem.category))
-            .where(FoodItem.owner_id == user_id)
+            .where(FoodItem.household_id == household_id)
             .where(FoodItem.ai_verified == False)  # noqa: E712
             .where(FoodItem.expiry_date.isnot(None))
             .order_by(FoodItem.expiry_date.asc())

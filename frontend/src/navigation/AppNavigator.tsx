@@ -14,8 +14,9 @@ import DashboardScreen from '../screens/DashboardScreen';
 import PantryScreen from '../screens/PantryScreen';
 import DailyCheckScreen from '../screens/DailyCheckScreen';
 import ScannerScreen from '../screens/ScannerScreen';
-import LeftoversScreen from '../screens/LeftoversScreen';
-import CommunityScreen from '../screens/CommunityScreen';
+import ShoppingScreen from '../screens/ShoppingScreen';
+import NotesScreen from '../screens/NotesScreen';
+import HouseholdScreen from '../screens/HouseholdScreen';
 import AddManualItemScreen from '../screens/AddManualItemScreen';
 
 const Tab = createBottomTabNavigator();
@@ -25,9 +26,9 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 const ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
   Dashboard: { active: 'grid', inactive: 'grid-outline' },
   Pantry: { active: 'file-tray-full', inactive: 'file-tray-full-outline' },
+  Shopping: { active: 'cart', inactive: 'cart-outline' },
+  Notes: { active: 'document-text', inactive: 'document-text-outline' },
   Scan: { active: 'scan', inactive: 'scan-outline' },
-  Leftovers: { active: 'restaurant', inactive: 'restaurant-outline' },
-  Community: { active: 'people', inactive: 'people-outline' },
 };
 
 function MainTabs({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
@@ -63,9 +64,9 @@ function MainTabs({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
         {props => <DashboardScreen {...props} user={user} onLogout={onLogout} />}
       </Tab.Screen>
       <Tab.Screen name="Pantry" component={PantryScreen} options={{ tabBarLabel: 'Spiżarnia' }} />
+      <Tab.Screen name="Shopping" component={ShoppingScreen} options={{ tabBarLabel: 'Zakupy' }} />
+      <Tab.Screen name="Notes" component={NotesScreen} options={{ tabBarLabel: 'Notatki' }} />
       <Tab.Screen name="Scan" component={ScannerScreen} options={{ tabBarLabel: 'Skanuj' }} />
-      <Tab.Screen name="Leftovers" component={LeftoversScreen} options={{ tabBarLabel: 'Resztki' }} />
-      <Tab.Screen name="Community" component={CommunityScreen} options={{ tabBarLabel: 'Społeczność' }} />
     </Tab.Navigator>
   );
 }
@@ -107,6 +108,11 @@ export default function AppNavigator() {
         <Stack.Screen
           name="AddManualItem"
           component={AddManualItemScreen}
+          options={{ presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="Household"
+          component={HouseholdScreen}
           options={{ presentation: 'modal' }}
         />
       </Stack.Navigator>

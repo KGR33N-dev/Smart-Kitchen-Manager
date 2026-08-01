@@ -33,6 +33,7 @@ async def run_receipt_processing(
     db: AsyncSession,
     scan_id: int,
     user_id: int,
+    household_id: int,
     image_path: str,
     task_id: str | None = None,
 ) -> dict:
@@ -47,7 +48,7 @@ async def run_receipt_processing(
         items_data = result.get("items", [])
 
         food_svc = FoodService(db)
-        created = await food_svc.bulk_create_from_receipt(user_id, items_data)
+        created = await food_svc.bulk_create_from_receipt(user_id, household_id, items_data)
 
         await db.execute(
             update(ScanHistory)

@@ -24,6 +24,11 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
     )
+    # Every user starts with a personal household (shared context for their
+    # fridge/pantry/lists/notes), which others can later join.
+    from app.services.household_service import HouseholdService
+    await HouseholdService(db).ensure_personal_household(user)
+    await db.flush()
     return user
 
 

@@ -85,6 +85,10 @@ class User(TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Currently selected household (shared fridge/pantry/lists/notes context).
+    # Plain integer pointer (no FK) to avoid a circular users<->households FK.
+    active_household_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     @property
     def is_premium(self) -> bool:
         if self.subscription_tier == SubscriptionTier.PREMIUM:
@@ -97,6 +101,9 @@ class User(TimestampMixin, Base):
     iot_devices: Mapped[list["IoTDevice"]] = relationship("IoTDevice", back_populates="owner", cascade="all, delete-orphan")
     scans: Mapped[list["ScanHistory"]] = relationship("ScanHistory", back_populates="user", cascade="all, delete-orphan")
     ai_feedback: Mapped[list["AIFeedback"]] = relationship("AIFeedback", back_populates="user", cascade="all, delete-orphan")
+    memberships: Mapped[list["HouseholdMembership"]] = relationship(  # noqa: F821
+        "HouseholdMembership", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 # ─── Category ─────────────────────────────────────────────────────────────────
@@ -141,6 +148,11 @@ class FoodItem(TimestampMixin, Base):
     # FK relations
     owner_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Shared context: the household this item belongs to. All household members
+    # see it. Nullable only for backwards compatibility with legacy rows.
+    household_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("households.id", ondelete="CASCADE"), nullable=True, index=True
     )
     category_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("categories.id", ondelete="SET NULL"), nullable=True

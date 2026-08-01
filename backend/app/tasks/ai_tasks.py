@@ -26,7 +26,7 @@ def _run(coro):
 
 
 @celery_app.task(bind=True, name="app.tasks.ai_tasks.process_receipt_image")
-def process_receipt_image(self, scan_id: int, user_id: int, image_path: str):
+def process_receipt_image(self, scan_id: int, user_id: int, household_id: int, image_path: str):
     """Background receipt OCR + parse → bulk-create FoodItems (shared logic)."""
     async def _inner():
         from app.core.database import AsyncSessionLocal
@@ -35,7 +35,7 @@ def process_receipt_image(self, scan_id: int, user_id: int, image_path: str):
         async with AsyncSessionLocal() as db:
             try:
                 return await run_receipt_processing(
-                    db, scan_id, user_id, image_path, task_id=self.request.id
+                    db, scan_id, user_id, household_id, image_path, task_id=self.request.id
                 )
             except Exception as exc:  # noqa: BLE001
                 raise self.retry(exc=exc, countdown=30)

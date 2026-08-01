@@ -12,8 +12,16 @@ które się kończą, i uczy się na podstawie Twoich potwierdzeń (Daily Check)
 ## ✨ Funkcje
 
 - **Konta i logowanie** — rejestracja, JWT (access + refresh).
-- **Spiżarnia** — pełny CRUD produktów, filtrowanie, wyszukiwanie, automatyczny
-  status (`świeże` / `kończące się` / `przeterminowane`) liczony z terminu ważności.
+- **Rodziny / gospodarstwa** — każdy użytkownik ma własne gospodarstwo i może
+  **zapraszać innych kodem**. Członkowie **współdzielą lodówkę, spiżarnię, listy
+  zakupów i notatki**. Można należeć do wielu gospodarstw i przełączać aktywne.
+- **Spiżarnia (współdzielona)** — pełny CRUD produktów, filtrowanie, wyszukiwanie,
+  automatyczny status (`świeże` / `kończące się` / `przeterminowane`) z terminu ważności.
+- **Listy zakupów (współdzielone)** — wiele list, odhaczanie pozycji, wspólne dla
+  całego gospodarstwa (na żywo dla wszystkich członków).
+- **Notatki — offline‑first** — działają **bez internetu** (lokalny magazyn na
+  urządzeniu); gdy jest sieć, **synchronizują się** z pozostałymi członkami
+  (delta‑sync, last‑write‑wins, tombstony dla usunięć).
 - **Skanowanie paragonu** — zdjęcie paragonu → produkty dodawane automatycznie
   (OCR + AI). Działa też w **trybie demo** bez żadnego modelu AI.
 - **Kamera / IoT** — analiza świeżości produktu ze zdjęcia.
@@ -31,14 +39,16 @@ które się kończą, i uczy się na podstawie Twoich potwierdzeń (Daily Check)
 Smart-Kitchen-Manager/
 ├── backend/                    # FastAPI (async, SQLAlchemy 2.0)
 │   ├── app/
-│   │   ├── api/v1/routes/      # auth, items, categories, upload, scans, payments
+│   │   ├── api/v1/routes/      # auth, households, items, categories, upload,
+│   │   │                       #   scans, shopping, notes, payments
 │   │   ├── core/               # config, database, security, logging, seed
-│   │   ├── models/             # ORM (User, FoodItem, Category, ScanHistory, …)
+│   │   ├── models/             # ORM (User, Household, FoodItem, ShoppingList,
+│   │   │                       #   Note, Category, ScanHistory, …)
 │   │   ├── repositories/       # warstwa dostępu do danych
 │   │   ├── schemas/            # Pydantic (walidacja / serializacja)
-│   │   ├── services/           # logika (food, ai, payment, scan_processing)
+│   │   ├── services/           # logika (food, ai, payment, household, note_sync)
 │   │   └── tasks/              # Celery (opcjonalnie)
-│   └── tests/                  # pytest (20 testów)
+│   └── tests/                  # pytest (34 testy)
 ├── frontend/                   # React Native / Expo (TypeScript)
 │   └── src/
 │       ├── api/client.ts       # jeden klient API (fetch)
@@ -118,6 +128,16 @@ klucze (Stripe / model AI).
 | POST | `/upload/receipt` | Skan paragonu (→ produkty) |
 | POST | `/upload/camera` | Analiza świeżości ze zdjęcia |
 | GET | `/scans/` | Historia skanów |
+| GET/POST | `/households/` | Lista / utworzenie gospodarstwa |
+| POST | `/households/join` | Dołączenie kodem |
+| GET | `/households/{id}/members` | Członkowie |
+| POST | `/households/{id}/switch` | Przełączenie aktywnego |
+| POST | `/households/{id}/regenerate-code` | Nowy kod (właściciel) |
+| GET/POST | `/shopping/lists` | Listy zakupów |
+| POST | `/shopping/lists/{id}/items` | Dodanie pozycji |
+| PATCH/DELETE | `/shopping/items/{id}` | Edycja / usunięcie pozycji |
+| POST | `/notes/sync` | Delta‑sync notatek (offline‑first) |
+| GET | `/notes/` | Notatki gospodarstwa |
 | POST | `/payments/checkout` | Stripe Checkout (Premium) |
 
 ---
@@ -132,7 +152,9 @@ pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Pokrycie: autoryzacja, CRUD produktów (z izolacją per‑użytkownik), przeliczanie
+Pokrycie: autoryzacja, gospodarstwa (tworzenie / dołączanie kodem / przełączanie
+/ współdzielenie), izolacja i współdzielenie produktów, listy zakupów,
+synchronizacja notatek (last‑write‑wins, tombstony, współdzielenie), przeliczanie
 statusów, Daily Check + feedback AI, seed kategorii, skan paragonu inline,
 limit freemium.
 
@@ -160,9 +182,20 @@ Pełna lista: `.env.example`.
 
 ---
 
+## 🔄 Jak działa współdzielenie i tryb offline
+
+- **Współdzielenie:** produkty, listy zakupów i notatki są przypięte do
+  gospodarstwa (`household_id`). Wszyscy członkowie widzą te same dane; endpointy
+  operują na *aktywnym* gospodarstwie użytkownika.
+- **Notatki offline:** na urządzeniu źródłem prawdy jest lokalny magazyn
+  (`AsyncStorage`, namespace per gospodarstwo). Edycje/usuwanie działają bez
+  sieci i są oznaczane jako „dirty". `POST /notes/sync` wysyła zmiany od ostatniej
+  synchronizacji i pobiera zmiany innych; konflikty rozstrzyga **last‑write‑wins**
+  po `client_updated_at`, a usunięcia propagują się jako tombstony.
+
 ## 🛣️ Dalszy rozwój (pomysły)
 
 - Podłączenie prawdziwego modelu vision (wyłączenie `AI_DEMO_MODE`).
-- Ekran „Resztki" oparty o realne składniki ze spiżarni.
-- Powiadomienia push o kończących się terminach.
+- Automatyczne dodawanie odhaczonych zakupów do spiżarni.
+- Powiadomienia push o kończących się terminach i zmianach współdzielonych.
 - Migracje Alembic zamiast auto‑create w produkcji.

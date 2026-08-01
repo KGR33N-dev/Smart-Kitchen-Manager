@@ -42,6 +42,22 @@ async def client():
 
 
 @pytest_asyncio.fixture
+def register_user(client):
+    """Factory: register + login a user, returning an Authorization header dict."""
+    async def _make(email: str, password: str = "password123", name: str = "User Name"):
+        await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "full_name": name},
+        )
+        res = await client.post(
+            "/api/v1/auth/token", data={"username": email, "password": password}
+        )
+        token = res.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+    return _make
+
+
+@pytest_asyncio.fixture
 async def auth_client(client):
     """An AsyncClient with a registered + logged-in user's bearer token set."""
     email = "tester@example.com"

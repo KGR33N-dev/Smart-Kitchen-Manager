@@ -44,5 +44,6 @@ async def get_db() -> AsyncSession:  # type: ignore[return]
 
 async def create_tables() -> None:
     """Create all tables (dev convenience – use Alembic in production)."""
+    import app.models  # noqa: F401 — ensure every model is registered in metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

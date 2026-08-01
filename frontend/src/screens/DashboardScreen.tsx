@@ -12,6 +12,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 import { Colors, FontSizes, Spacing, Radii, Shadows } from '../theme';
 import type { FoodItem, UserOut } from '../api/client';
 import { usePantryStore } from '../store/pantryStore';
+import { useHouseholdStore } from '../store/householdStore';
 
 interface DashboardProps { navigation: any; user?: UserOut; onLogout?: () => void; }
 
@@ -97,10 +98,15 @@ export default function DashboardScreen({ navigation, user, onLogout }: Dashboar
     zeroWasteScore: usePantryStore(s => s.zeroWasteScore),
   };
 
+  const households = useHouseholdStore(s => s.households);
+  const fetchHouseholds = useHouseholdStore(s => s.fetch);
+  const activeHousehold = households.find(h => h.is_active);
+
   useFocusEffect(
     useCallback(() => {
       refreshAll();
-    }, [refreshAll]),
+      fetchHouseholds();
+    }, [refreshAll, fetchHouseholds]),
   );
 
   const expiring = items.filter(i => i.status === 'expiring_soon' || i.status === 'expired');
@@ -132,6 +138,21 @@ export default function DashboardScreen({ navigation, user, onLogout }: Dashboar
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Household switcher */}
+        <TouchableOpacity style={s.hhChip} onPress={() => navigation.navigate('Household')}>
+          <Ionicons name="home" size={14} color={Colors.primaryDark} />
+          <Text style={s.hhChipText} numberOfLines={1}>
+            {activeHousehold ? activeHousehold.name : 'Gospodarstwo'}
+          </Text>
+          {!!activeHousehold && activeHousehold.member_count > 1 && (
+            <View style={s.hhCount}>
+              <Ionicons name="people" size={11} color={Colors.primaryDark} />
+              <Text style={s.hhCountText}>{activeHousehold.member_count}</Text>
+            </View>
+          )}
+          <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+        </TouchableOpacity>
 
         {/* Gauge */}
         <ZeroWasteGauge score={stats.zeroWasteScore} />
@@ -274,4 +295,13 @@ const s = StyleSheet.create({
     marginBottom: 8, ...Shadows.card,
   },
   emptyText: { fontSize: FontSizes.sm, color: Colors.textMuted, textAlign: 'center' },
+
+  hhChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    backgroundColor: Colors.primaryBgMid, borderRadius: Radii.full,
+    paddingHorizontal: 12, paddingVertical: 7, marginBottom: Spacing.base,
+  },
+  hhChipText: { fontSize: FontSizes.sm, fontWeight: '700', color: Colors.primaryDark, maxWidth: 160 },
+  hhCount: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 2 },
+  hhCountText: { fontSize: FontSizes.xs, fontWeight: '700', color: Colors.primaryDark },
 });

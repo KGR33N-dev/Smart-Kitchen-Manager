@@ -28,8 +28,73 @@ export interface UserOut {
   subscription_tier: 'free' | 'premium';
   is_premium: boolean;
   scans_this_month: number;
+  active_household_id: number | null;
   subscription_valid_until: string | null;
   created_at: string;
+}
+
+export type MemberRole = 'owner' | 'member';
+
+export interface Household {
+  id: number;
+  name: string;
+  join_code: string;
+  is_personal: boolean;
+  owner_id: number;
+  created_at: string;
+  role: MemberRole | null;
+  is_active: boolean;
+  member_count: number;
+}
+
+export interface HouseholdMember {
+  user_id: number;
+  email: string;
+  full_name: string;
+  role: MemberRole;
+}
+
+export interface ShoppingItem {
+  id: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  is_checked: boolean;
+  created_at: string;
+}
+
+export interface ShoppingList {
+  id: number;
+  name: string;
+  is_archived: boolean;
+  created_at: string;
+  items: ShoppingItem[];
+}
+
+/** Server-shaped note (used during sync). */
+export interface ServerNote {
+  client_id: string;
+  title: string;
+  content: string;
+  color: string | null;
+  is_deleted: boolean;
+  client_updated_at: string;
+  updated_at: string;
+  author_id: number | null;
+}
+
+export interface NoteChange {
+  client_id: string;
+  title: string;
+  content: string;
+  color?: string | null;
+  is_deleted: boolean;
+  client_updated_at: string;
+}
+
+export interface SyncResponse {
+  server_time: string;
+  notes: ServerNote[];
 }
 
 export interface Category {
@@ -237,6 +302,49 @@ export const uploadApi = {
     uploadFile<ScanOut>(`/api/v1/upload/camera${qs({ item_name: itemName })}`, uri),
   pollStatus: (taskId: string) =>
     apiFetch<{ task_id: string; status: string; result: unknown }>(`/api/v1/upload/status/${taskId}`),
+};
+
+// ── Households (families / sharing) ──────────────────────────────────────────
+
+export const householdsApi = {
+  list: () => apiFetch<Household[]>('/api/v1/households/'),
+  create: (name: string) =>
+    apiFetch<Household>('/api/v1/households/', { method: 'POST', body: JSON.stringify({ name }) }),
+  join: (code: string) =>
+    apiFetch<Household>('/api/v1/households/join', { method: 'POST', body: JSON.stringify({ code }) }),
+  members: (id: number) =>
+    apiFetch<HouseholdMember[]>(`/api/v1/households/${id}/members`),
+  switch: (id: number) =>
+    apiFetch<Household>(`/api/v1/households/${id}/switch`, { method: 'POST' }),
+  regenerateCode: (id: number) =>
+    apiFetch<{ join_code: string }>(`/api/v1/households/${id}/regenerate-code`, { method: 'POST' }),
+};
+
+// ── Shopping lists ────────────────────────────────────────────────────────────
+
+export const shoppingApi = {
+  lists: () => apiFetch<ShoppingList[]>('/api/v1/shopping/lists'),
+  createList: (name: string) =>
+    apiFetch<ShoppingList>('/api/v1/shopping/lists', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteList: (id: number) =>
+    apiFetch<void>(`/api/v1/shopping/lists/${id}`, { method: 'DELETE' }),
+  addItem: (listId: number, item: { name: string; quantity?: number; unit?: string }) =>
+    apiFetch<ShoppingItem>(`/api/v1/shopping/lists/${listId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    }),
+  updateItem: (id: number, patch: Partial<Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'is_checked'>>) =>
+    apiFetch<ShoppingItem>(`/api/v1/shopping/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteItem: (id: number) =>
+    apiFetch<void>(`/api/v1/shopping/items/${id}`, { method: 'DELETE' }),
+};
+
+// ── Notes (offline-first sync) ────────────────────────────────────────────────
+
+export const notesApi = {
+  sync: (payload: { since: string | null; changes: NoteChange[] }) =>
+    apiFetch<SyncResponse>('/api/v1/notes/sync', { method: 'POST', body: JSON.stringify(payload) }),
+  list: () => apiFetch<ServerNote[]>('/api/v1/notes/'),
 };
 
 // ── Payments ────────────────────────────────────────────────────────────────

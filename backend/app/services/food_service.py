@@ -1,10 +1,11 @@
 """
 Food Service — Business logic for pantry management
-Coordinates: FoodRepository + status auto-update + AI feedback storage
+Items are scoped to a household (shared context); every member sees them.
 """
 from datetime import datetime, timezone, timedelta
 from typing import Sequence
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.food import FoodItem, ItemStatus
@@ -31,54 +32,52 @@ class FoodService:
         self.repo = FoodRepository(db)
         self.feedback_repo = AIFeedbackRepository(db)
 
-    async def create(self, owner_id: int, payload: FoodItemCreate) -> FoodItem:
+    async def create(self, owner_id: int, household_id: int, payload: FoodItemCreate) -> FoodItem:
         data = payload.model_dump()
         data["owner_id"] = owner_id
+        data["household_id"] = household_id
         data["status"] = _compute_status(payload.expiry_date)
         return await self.repo.create(**data)
 
-    async def list_items(self, owner_id: int, **filters) -> Sequence[FoodItem]:
-        return await self.repo.list_for_user(owner_id, **filters)
+    async def list_items(self, household_id: int, **filters) -> Sequence[FoodItem]:
+        return await self.repo.list_for_household(household_id, **filters)
 
-    async def get_item(self, item_id: int, owner_id: int) -> FoodItem:
+    async def get_item(self, item_id: int, household_id: int) -> FoodItem:
         item = await self.repo.get_with_category(item_id)
-        if not item or item.owner_id != owner_id:
-            from fastapi import HTTPException
+        if not item or item.household_id != household_id:
             raise HTTPException(status_code=404, detail="Item not found")
         return item
 
-    async def update_item(self, item_id: int, owner_id: int, payload: FoodItemUpdate) -> FoodItem:
-        item = await self.get_item(item_id, owner_id)
+    async def update_item(self, item_id: int, household_id: int, payload: FoodItemUpdate) -> FoodItem:
+        item = await self.get_item(item_id, household_id)
         data = payload.model_dump(exclude_none=True)
         if "expiry_date" in data:
             data["status"] = _compute_status(data["expiry_date"])
         updated = await self.repo.update(item.id, **data)
         return updated  # type: ignore
 
-    async def delete_item(self, item_id: int, owner_id: int) -> None:
-        item = await self.get_item(item_id, owner_id)
+    async def delete_item(self, item_id: int, household_id: int) -> None:
+        item = await self.get_item(item_id, household_id)
         await self.repo.delete(item.id)
 
-    async def expiring_soon(self, owner_id: int, days: int = 3) -> Sequence[FoodItem]:
-        return await self.repo.expiring_soon(owner_id, days)
+    async def expiring_soon(self, household_id: int, days: int = 3) -> Sequence[FoodItem]:
+        return await self.repo.expiring_soon(household_id, days)
 
     async def verify_item(
         self,
         item_id: int,
-        owner_id: int,
+        household_id: int,
+        user_id: int,
         confirmed: bool,
         ai_prediction: str,
         ai_confidence: float | None = None,
     ) -> FoodItem:
         """Daily Check TAK/NIE — stores correction for few-shot learning."""
-        item = await self.get_item(item_id, owner_id)
+        item = await self.get_item(item_id, household_id)
 
-        # Determine what the user corrected it to
         user_correction = item.status.value if confirmed else ItemStatus.EXPIRED.value
-
-        # Persist feedback for future few-shot context
         await self.feedback_repo.create(
-            user_id=owner_id,
+            user_id=user_id,
             item_name=item.name,
             ai_prediction=ai_prediction,
             user_correction=user_correction,
@@ -86,7 +85,6 @@ class FoodService:
             ai_confidence=ai_confidence,
         )
 
-        # Update the item itself
         new_status = item.status if confirmed else ItemStatus.EXPIRED
         updated = await self.repo.update(
             item.id,
@@ -97,9 +95,9 @@ class FoodService:
         return updated  # type: ignore
 
     async def bulk_create_from_receipt(
-        self, owner_id: int, items_data: list[dict]
+        self, owner_id: int, household_id: int, items_data: list[dict]
     ) -> list[FoodItem]:
-        """Creates multiple FoodItems from a parsed receipt AI response.
+        """Creates multiple FoodItems (in the household) from a parsed receipt.
 
         Links each item to an existing category by matching the AI-provided
         category name (case-insensitive), falling back to no category.
@@ -117,6 +115,7 @@ class FoodService:
             category_id = categories.get(str(d.get("category", "")).lower())
             item = await self.repo.create(
                 owner_id=owner_id,
+                household_id=household_id,
                 name=d.get("name", "Unknown"),
                 quantity=float(d.get("quantity", 1)),
                 unit=d.get("unit", "szt."),

@@ -31,5 +31,6 @@ class UserOut(BaseModel):
     subscription_tier: SubscriptionTier
     is_premium: bool
     scans_this_month: int
+    active_household_id: Optional[int] = None
     subscription_valid_until: Optional[datetime] = None
     created_at: datetime
