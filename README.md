@@ -25,6 +25,12 @@ które się kończą, i uczy się na podstawie Twoich potwierdzeń (Daily Check)
   wg okresu). Działają **bez internetu** (lokalny magazyn); gdy jest sieć,
   **synchronizują się** z członkami gospodarstwa (delta‑sync, last‑write‑wins,
   tombstony dla usunięć).
+- **Przepisy** — baza przepisów (z składnikami i instrukcją), wyszukiwarka.
+- **Asystent AI (LangChain)** — czat kucharski: napisz „chcę zrobić żeberka",
+  a asystent **znajdzie przepis, sprawdzi co masz w lodówce/spiżarni, powie
+  czego brakuje i automatycznie dopisze brakujące produkty do listy zakupów**.
+  Używa LangChain (ChatOpenAI) do formułowania odpowiedzi, a w **trybie demo**
+  działa na deterministycznej logice bez modelu.
 - **Skanowanie paragonu** — zdjęcie paragonu → produkty dodawane automatycznie
   (OCR + AI). Działa też w **trybie demo** bez żadnego modelu AI.
 - **Kamera / IoT** — analiza świeżości produktu ze zdjęcia.
@@ -141,6 +147,9 @@ klucze (Stripe / model AI).
 | PATCH/DELETE | `/shopping/items/{id}` | Edycja / usunięcie pozycji |
 | POST | `/notes/sync` | Delta‑sync notatek (offline‑first) |
 | GET | `/notes/` | Notatki gospodarstwa |
+| GET | `/recipes/` | Lista / wyszukiwanie przepisów |
+| GET | `/recipes/{id}` | Przepis ze składnikami |
+| POST | `/ai/chat` | Asystent kucharski (przepis → braki → zakupy) |
 | POST | `/payments/checkout` | Stripe Checkout (Premium) |
 
 ---

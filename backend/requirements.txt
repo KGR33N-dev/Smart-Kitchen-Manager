@@ -30,6 +30,12 @@ openai==1.51.2
 pillow==11.0.0
 httpx==0.27.2
 
+# ── AI chat (LangChain) ───────────────────────────────────────────────────────
+# Used by the cooking assistant to phrase replies when a real model is set.
+# Optional: in AI_DEMO_MODE the chat runs on deterministic templates.
+langchain-core>=0.3,<0.4
+langchain-openai>=0.2,<0.4
+
 # ── Payments ──────────────────────────────────────────────────────────────────
 stripe==10.12.0
 

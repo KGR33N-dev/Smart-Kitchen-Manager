@@ -18,6 +18,8 @@ import ShoppingScreen from '../screens/ShoppingScreen';
 import NotesScreen from '../screens/NotesScreen';
 import HouseholdScreen from '../screens/HouseholdScreen';
 import AddManualItemScreen from '../screens/AddManualItemScreen';
+import ChatScreen from '../screens/ChatScreen';
+import RecipesScreen from '../screens/RecipesScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -26,9 +28,9 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 const ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
   Dashboard: { active: 'grid', inactive: 'grid-outline' },
   Pantry: { active: 'file-tray-full', inactive: 'file-tray-full-outline' },
+  Chat: { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
   Shopping: { active: 'cart', inactive: 'cart-outline' },
   Notes: { active: 'document-text', inactive: 'document-text-outline' },
-  Scan: { active: 'scan', inactive: 'scan-outline' },
 };
 
 function MainTabs({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
@@ -64,9 +66,9 @@ function MainTabs({ user, onLogout }: { user: UserOut; onLogout: () => void }) {
         {props => <DashboardScreen {...props} user={user} onLogout={onLogout} />}
       </Tab.Screen>
       <Tab.Screen name="Pantry" component={PantryScreen} options={{ tabBarLabel: 'Spiżarnia' }} />
+      <Tab.Screen name="Chat" component={ChatScreen} options={{ tabBarLabel: 'Asystent' }} />
       <Tab.Screen name="Shopping" component={ShoppingScreen} options={{ tabBarLabel: 'Zakupy' }} />
       <Tab.Screen name="Notes" component={NotesScreen} options={{ tabBarLabel: 'Notatki' }} />
-      <Tab.Screen name="Scan" component={ScannerScreen} options={{ tabBarLabel: 'Skanuj' }} />
     </Tab.Navigator>
   );
 }
@@ -115,6 +117,8 @@ export default function AppNavigator() {
           component={HouseholdScreen}
           options={{ presentation: 'modal' }}
         />
+        <Stack.Screen name="Scan" component={ScannerScreen} />
+        <Stack.Screen name="Recipes" component={RecipesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

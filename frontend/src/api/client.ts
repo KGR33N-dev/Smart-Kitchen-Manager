@@ -355,6 +355,55 @@ export const notesApi = {
   list: () => apiFetch<ServerNote[]>('/api/v1/notes/'),
 };
 
+// ── Recipes ───────────────────────────────────────────────────────────────────
+
+export interface RecipeIngredientT {
+  id: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  is_optional: boolean;
+}
+
+export interface RecipeSummary {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  prep_minutes: number;
+  servings: number;
+}
+
+export interface Recipe extends RecipeSummary {
+  instructions: string;
+  ingredients: RecipeIngredientT[];
+}
+
+export const recipesApi = {
+  list: (q?: string) => apiFetch<RecipeSummary[]>(`/api/v1/recipes/${qs({ q })}`),
+  get: (id: number) => apiFetch<Recipe>(`/api/v1/recipes/${id}`),
+};
+
+// ── AI cooking assistant ──────────────────────────────────────────────────────
+
+export interface ChatResponse {
+  reply: string;
+  intent: 'recipe' | 'inventory' | 'unknown';
+  recipe: Recipe | null;
+  have: string[];
+  missing: RecipeIngredientT[];
+  added_to_shopping: string[];
+  shopping_list_id: number | null;
+}
+
+export const aiApi = {
+  chat: (message: string, autoAdd = true) =>
+    apiFetch<ChatResponse>('/api/v1/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, auto_add: autoAdd }),
+    }),
+};
+
 // ── Payments ────────────────────────────────────────────────────────────────
 
 export const paymentsApi = {

@@ -12,7 +12,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core.database import create_tables
 from app.core.logging import configure_logging
-from app.core.seed import seed_categories
+from app.core.seed import seed_categories, seed_recipes
 from app.api.v1 import v1_router
 
 
@@ -24,8 +24,9 @@ async def lifespan(app: FastAPI):
     # Dev convenience: auto-create tables. Use Alembic in production!
     if settings.ENVIRONMENT == "development":
         await create_tables()
-    # Ensure default categories exist (idempotent).
+    # Ensure default categories + recipes exist (idempotent).
     await seed_categories()
+    await seed_recipes()
     yield
     # Teardown (close engine connections, etc.)
 

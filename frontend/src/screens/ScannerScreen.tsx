@@ -109,7 +109,7 @@ export default function ScannerScreen({ navigation }: any) {
     Alert.alert(
       '✅ Paragon przetworzony!',
       `Dodano ${createdCount} produkt(ów) do spiżarni.`,
-      [{ text: 'Pokaż spiżarnię', onPress: () => navigation.navigate('Pantry') }],
+      [{ text: 'Pokaż spiżarnię', onPress: () => navigation.navigate('Main', { screen: 'Pantry' }) }],
     );
     setMode('idle');
   };

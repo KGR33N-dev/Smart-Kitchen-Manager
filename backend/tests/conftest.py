@@ -18,17 +18,18 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.core.database import Base, engine
-from app.core.seed import seed_categories
+from app.core.seed import seed_categories, seed_recipes
 from app.main import app
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_db():
-    """Fresh schema + seed categories before each test; drop after."""
+    """Fresh schema + seed categories & recipes before each test; drop after."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     await seed_categories()
+    await seed_recipes()
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
