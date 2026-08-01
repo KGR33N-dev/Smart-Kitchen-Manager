@@ -71,13 +71,18 @@ export interface ShoppingList {
   items: ShoppingItem[];
 }
 
-/** Server-shaped note (used during sync). */
+export type TaskPeriod = 'daily' | 'weekly' | 'monthly';
+
+/** Server-shaped note/task (used during sync). */
 export interface ServerNote {
   client_id: string;
   title: string;
   content: string;
   color: string | null;
   is_deleted: boolean;
+  period: TaskPeriod;
+  is_done: boolean;
+  remind_at: string | null; // "HH:MM"
   client_updated_at: string;
   updated_at: string;
   author_id: number | null;
@@ -89,6 +94,9 @@ export interface NoteChange {
   content: string;
   color?: string | null;
   is_deleted: boolean;
+  period: TaskPeriod;
+  is_done: boolean;
+  remind_at: string | null;
   client_updated_at: string;
 }
 

@@ -30,6 +30,13 @@ class Note(Base):
     color: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
+    # Task fields. `period` groups a task into a tab (daily/weekly/monthly);
+    # `is_done` is the checkable state; `remind_at` is an optional "HH:MM" time
+    # that drives a repeating local notification on the device.
+    period: Mapped[str] = mapped_column(String(20), default="daily", nullable=False)
+    is_done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    remind_at: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+
     # Device clock — authoritative for last-write-wins merge.
     client_updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

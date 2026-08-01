@@ -19,9 +19,12 @@ które się kończą, i uczy się na podstawie Twoich potwierdzeń (Daily Check)
   automatyczny status (`świeże` / `kończące się` / `przeterminowane`) z terminu ważności.
 - **Listy zakupów (współdzielone)** — wiele list, odhaczanie pozycji, wspólne dla
   całego gospodarstwa (na żywo dla wszystkich członków).
-- **Notatki — offline‑first** — działają **bez internetu** (lokalny magazyn na
-  urządzeniu); gdy jest sieć, **synchronizują się** z pozostałymi członkami
-  (delta‑sync, last‑write‑wins, tombstony dla usunięć).
+- **Zadania / notatki — offline‑first** — zakładki **Codzienne / Tygodniowe /
+  Miesięczne**, zadania **odznaczane** (zrobione/niezrobione), z opcjonalną
+  **godziną przypomnienia** → lokalne **powiadomienie** o tej porze (powtarzane
+  wg okresu). Działają **bez internetu** (lokalny magazyn); gdy jest sieć,
+  **synchronizują się** z członkami gospodarstwa (delta‑sync, last‑write‑wins,
+  tombstony dla usunięć).
 - **Skanowanie paragonu** — zdjęcie paragonu → produkty dodawane automatycznie
   (OCR + AI). Działa też w **trybie demo** bez żadnego modelu AI.
 - **Kamera / IoT** — analiza świeżości produktu ze zdjęcia.

@@ -51,6 +51,9 @@ class NoteSyncService:
                         content=change.content,
                         color=change.color,
                         is_deleted=change.is_deleted,
+                        period=change.period,
+                        is_done=change.is_done,
+                        remind_at=change.remind_at,
                         client_updated_at=incoming_ts,
                     )
                 )
@@ -62,6 +65,9 @@ class NoteSyncService:
                     existing.content = change.content
                     existing.color = change.color
                     existing.is_deleted = change.is_deleted
+                    existing.period = change.period
+                    existing.is_done = change.is_done
+                    existing.remind_at = change.remind_at
                     existing.client_updated_at = incoming_ts
         await self.db.flush()
 

@@ -5,13 +5,14 @@ T2 = "2026-01-01T11:00:00+00:00"
 T3 = "2026-01-01T12:00:00+00:00"
 
 
-def _note(client_id, title, content="", ts=T1, is_deleted=False):
+def _note(client_id, title, content="", ts=T1, is_deleted=False, **extra):
     return {
         "client_id": client_id,
         "title": title,
         "content": content,
         "is_deleted": is_deleted,
         "client_updated_at": ts,
+        **extra,
     }
 
 
@@ -72,6 +73,29 @@ async def test_notes_shared_across_devices(client, register_user):
     # B pulls and sees it
     body = (await client.post("/api/v1/notes/sync", headers=b, json={"since": None, "changes": []})).json()
     assert any(n["title"] == "Lista gości" for n in body["notes"])
+
+
+async def test_task_fields_roundtrip(auth_client):
+    await auth_client.post("/api/v1/notes/sync", json={"changes": [
+        _note("t1", "Podlać kwiaty", ts=T1, period="weekly", is_done=False, remind_at="08:30"),
+    ]})
+    note = (await auth_client.get("/api/v1/notes/")).json()[0]
+    assert note["period"] == "weekly"
+    assert note["remind_at"] == "08:30"
+    assert note["is_done"] is False
+
+    # mark done (newer edit)
+    await auth_client.post("/api/v1/notes/sync", json={"changes": [
+        _note("t1", "Podlać kwiaty", ts=T2, period="weekly", is_done=True, remind_at="08:30"),
+    ]})
+    note = (await auth_client.get("/api/v1/notes/")).json()[0]
+    assert note["is_done"] is True
+
+
+async def test_period_defaults_to_daily(auth_client):
+    await auth_client.post("/api/v1/notes/sync", json={"changes": [_note("d1", "Zwykłe")]})
+    note = (await auth_client.get("/api/v1/notes/")).json()[0]
+    assert note["period"] == "daily"
 
 
 async def test_notes_isolated_between_households(client, register_user):
